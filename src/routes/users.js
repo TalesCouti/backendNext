@@ -46,6 +46,24 @@ function isProfessor(role) {
   return role === "professor";
 }
 
+function generateInviteCode(length = 8) {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  for (let index = 0; index < length; index += 1) {
+    code += alphabet[Math.floor(Math.random() * alphabet.length)];
+  }
+  return code;
+}
+
+async function createUniqueClassCode() {
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const code = generateInviteCode();
+    const existing = await query("SELECT 1 FROM classes WHERE code = $1", [code]);
+    if (!existing.rowCount) return code;
+  }
+  throw new Error("NÃ£o foi possÃ­vel gerar um cÃ³digo Ãºnico para a turma.");
+}
+
 async function getActor(userId) {
   const result = await query("SELECT id, role, display_name FROM users WHERE id = $1", [userId]);
   return result.rowCount ? result.rows[0] : null;
@@ -406,12 +424,18 @@ router.post("/classes", authMiddleware, async (req, res) => {
   const { name, description } = req.body;
   if (!name) return res.status(400).json({ message: "Informe o nome da turma." });
 
-  const code = Math.random().toString(36).slice(2, 8).toUpperCase();
-  const created = await query(
-    "INSERT INTO classes (name, code, description, created_by) VALUES ($1, $2, $3, $4) RETURNING id, name, code, description",
-    [name, code, description || "", req.userId]
-  );
-  return res.status(201).json(created.rows[0]);
+  try {
+    const code = await createUniqueClassCode();
+    const created = await query(
+      `INSERT INTO classes (name, code, description, created_by)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, name, code, description`,
+      [name, code, description || "", req.userId]
+    );
+    return res.status(201).json(created.rows[0]);
+  } catch (error) {
+    return res.status(500).json({ message: error.message || "Falha ao gerar o cÃ³digo da turma." });
+  }
 });
 
 router.post("/classes/join", authMiddleware, async (req, res) => {
