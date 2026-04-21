@@ -7,7 +7,12 @@ import contentRoutes from "./routes/content.js";
 import { initDatabase } from "./config/db.js";
 
 const app = express();
-app.use(cors());
+const allowedOrigin = process.env.CORS_ORIGIN || "*";
+app.use(
+  cors({
+    origin: allowedOrigin
+  })
+);
 app.use(express.json({ limit: "2mb" }));
 
 app.get("/health", (_, res) => res.json({ ok: true }));

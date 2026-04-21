@@ -1,7 +1,26 @@
 import { Pool } from "pg";
 
+function buildDatabaseUrlFromEnv() {
+  const host = process.env.DB_HOST;
+  const user = process.env.DB_USER;
+  const pass = process.env.DB_PASS;
+  const name = process.env.DB_NAME;
+  const port = process.env.DB_PORT || "5432";
+
+  if (!host || !user || !pass || !name) return null;
+
+  return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(pass)}@${host}:${port}/${name}`;
+}
+
+const connectionString = process.env.DATABASE_URL || buildDatabaseUrlFromEnv();
+
+if (!connectionString) {
+  throw new Error("Defina DATABASE_URL ou DB_HOST/DB_USER/DB_PASS/DB_NAME no .env");
+}
+
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL
+  connectionString,
+  ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : false
 });
 
 export async function query(text, params = []) {
