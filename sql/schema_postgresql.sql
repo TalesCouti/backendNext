@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS modules (
   description TEXT NOT NULL,
   icon TEXT NOT NULL DEFAULT '📘',
   created_by UUID REFERENCES users(id) ON DELETE SET NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS lessons (
@@ -38,9 +39,23 @@ CREATE TABLE IF NOT EXISTS lessons (
   module_id TEXT NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
   summary TEXT NOT NULL,
-  video_url TEXT NOT NULL,
+  video_url TEXT NOT NULL DEFAULT '',
   duration_min INTEGER NOT NULL DEFAULT 10,
   position INTEGER NOT NULL DEFAULT 1,
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS activities (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  module_id TEXT NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  difficulty TEXT NOT NULL DEFAULT '🟢 Fácil',
+  question TEXT NOT NULL,
+  options TEXT[] NOT NULL,
+  correct_answer TEXT NOT NULL,
+  explanation TEXT NOT NULL,
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -84,6 +99,7 @@ CREATE TABLE IF NOT EXISTS classes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   code TEXT UNIQUE NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
   created_by UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -94,6 +110,15 @@ CREATE TABLE IF NOT EXISTS class_members (
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (class_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS class_modules (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  class_id UUID NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+  module_id TEXT NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
+  assigned_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (class_id, module_id)
 );
 
 INSERT INTO modules (id, "order", title, description, icon)

@@ -6,49 +6,73 @@ import { query } from "../config/db.js";
 const router = express.Router();
 const strongPassword = /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
 
-router.post("/register", async (req, res) => {
-  const { fullName, birthDate, email, password, confirmPassword, role } = req.body;
+function normalizeRequestedRole(role) {
+  return role === "professor" ? "professor" : "aluno";
+}
 
+async function createUser({ fullName, birthDate, email, password, confirmPassword, role }) {
   if (!fullName || !birthDate || !email || !password || !confirmPassword) {
-    return res.status(400).json({ message: "Preencha todos os campos obrigatórios." });
+    return { status: 400, body: { message: "Preencha todos os campos obrigatórios." } };
   }
 
   if (password !== confirmPassword) {
-    return res.status(400).json({ message: "As senhas não coincidem." });
+    return { status: 400, body: { message: "As senhas não coincidem." } };
   }
 
   if (!strongPassword.test(password)) {
-    return res.status(400).json({ message: "Senha fraca. Use 8+ caracteres com maiúscula, minúscula, número e símbolo." });
+    return { status: 400, body: { message: "Senha fraca. Use 8+ caracteres com maiúscula, minúscula, número e símbolo." } };
   }
 
-  const sanitizedEmail = String(email).toLowerCase();
+  const sanitizedEmail = String(email).toLowerCase().trim();
   const existing = await query("SELECT id FROM users WHERE email = $1", [sanitizedEmail]);
-  if (existing.rowCount) return res.status(409).json({ message: "E-mail já cadastrado." });
+  if (existing.rowCount) {
+    return { status: 409, body: { message: "E-mail já cadastrado." } };
+  }
 
   const passwordHash = await bcrypt.hash(password, 10);
-  const displayName = fullName.split(" ")[0];
-  const safeRole = role === "admin" || role === "professor" ? role : "aluno";
-
+  const displayName = fullName.trim().split(/\s+/)[0];
   const created = await query(
     `INSERT INTO users (full_name, display_name, birth_date, email, password_hash, role)
      VALUES ($1, $2, $3, $4, $5, $6)
-     RETURNING id`,
-    [fullName, displayName, birthDate, sanitizedEmail, passwordHash, safeRole]
+     RETURNING id, role`,
+    [fullName.trim(), displayName, birthDate, sanitizedEmail, passwordHash, role]
   );
 
-  return res.status(201).json({ id: created.rows[0].id, message: "Cadastro concluído." });
+  return {
+    status: 201,
+    body: {
+      id: created.rows[0].id,
+      role: created.rows[0].role,
+      message: "Cadastro concluído."
+    }
+  };
+}
+
+router.post("/register", async (req, res) => {
+  const { role, accessCode } = req.body;
+  const requestedRole = normalizeRequestedRole(role);
+
+  if (requestedRole === "professor") {
+    const expectedCode = process.env.PROFESSOR_REGISTRATION_CODE || "";
+    if (!expectedCode || accessCode !== expectedCode) {
+      return res.status(403).json({ message: "Código de acesso inválido para cadastro de professor." });
+    }
+  }
+
+  const result = await createUser({ ...req.body, role: requestedRole });
+  return res.status(result.status).json(result.body);
 });
 
 router.post("/login", async (req, res) => {
   const { email, password } = req.body;
-  const userResult = await query("SELECT id, password_hash FROM users WHERE email = $1", [email?.toLowerCase()]);
+  const userResult = await query("SELECT id, password_hash, role FROM users WHERE email = $1", [email?.toLowerCase()]);
   if (!userResult.rowCount) return res.status(401).json({ message: "Credenciais inválidas." });
   const user = userResult.rows[0];
 
   const ok = await bcrypt.compare(password, user.password_hash);
   if (!ok) return res.status(401).json({ message: "Credenciais inválidas." });
 
-  const token = jwt.sign({ sub: user.id }, process.env.JWT_SECRET, { expiresIn: "7d" });
+  const token = jwt.sign({ sub: user.id, role: user.role }, process.env.JWT_SECRET, { expiresIn: "7d" });
   return res.json({ token });
 });
 

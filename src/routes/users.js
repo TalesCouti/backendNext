@@ -42,12 +42,53 @@ const XP_ACTIONS = {
   hard_challenge: 150
 };
 
+function isProfessor(role) {
+  return role === "professor";
+}
+
+async function getActor(userId) {
+  const result = await query("SELECT id, role, display_name FROM users WHERE id = $1", [userId]);
+  return result.rowCount ? result.rows[0] : null;
+}
+
+async function getClassWithAccess(actor, classId) {
+  const result = await query(
+    `SELECT c.id, c.name, c.code, c.description, c.created_by, u.display_name AS creator_name
+     FROM classes c
+     LEFT JOIN users u ON u.id = c.created_by
+     WHERE c.id = $1`,
+    [classId]
+  );
+  if (!result.rowCount) return null;
+  const turma = result.rows[0];
+
+  if (turma.created_by === actor.id) {
+    return { turma, canManage: true };
+  }
+
+  const membership = await query("SELECT 1 FROM class_members WHERE class_id = $1 AND user_id = $2", [classId, actor.id]);
+  if (membership.rowCount) {
+    return { turma, canManage: false };
+  }
+
+  return false;
+}
+
+async function getManageableModule(actor, moduleId) {
+  const result = await query("SELECT id, created_by FROM modules WHERE id = $1", [moduleId]);
+  if (!result.rowCount) return null;
+  const module = result.rows[0];
+  if (module.created_by === actor.id) return module;
+  return false;
+}
+
 router.get("/me", authMiddleware, async (req, res) => {
   const userResult = await query("SELECT * FROM users WHERE id = $1", [req.userId]);
   if (!userResult.rowCount) return res.status(404).json({ message: "Usuário não encontrado." });
   const user = userResult.rows[0];
   const progressRows = await query("SELECT module_id, percent FROM module_progress WHERE user_id = $1", [req.userId]);
   const moduleProgress = Object.fromEntries(progressRows.rows.map((row) => [row.module_id, row.percent]));
+  const completedCoursesRows = await query("SELECT course_name FROM completed_courses WHERE user_id = $1", [req.userId]);
 
   const { current, next } = getLevelByXp(user.xp);
   return res.json({
@@ -64,6 +105,7 @@ router.get("/me", authMiddleware, async (req, res) => {
     weeklyXp: user.weekly_xp,
     monthlyXp: user.monthly_xp,
     moduleProgress,
+    completedCourses: completedCoursesRows.rows.map((row) => row.course_name),
     level: current,
     xpToNextLevel: next ? next.minXp - user.xp : 0,
     memberSince: user.created_at
@@ -258,19 +300,116 @@ router.post("/me/progress", authMiddleware, async (req, res) => {
   return res.json({ moduleId, percent: finalPercent });
 });
 
-router.post("/classes", authMiddleware, async (req, res) => {
-  const actor = await query("SELECT role FROM users WHERE id = $1", [req.userId]);
-  if (!actor.rowCount || !["admin", "professor"].includes(actor.rows[0].role)) {
-    return res.status(403).json({ message: "Somente admin/professor pode criar turmas." });
+router.get("/classes", authMiddleware, async (req, res) => {
+  const actor = await getActor(req.userId);
+  if (!actor) return res.status(404).json({ message: "Usuário não encontrado." });
+
+  const params = [];
+  let whereClause = "";
+
+  if (actor.role === "professor") {
+    params.push(actor.id);
+    whereClause = `WHERE c.created_by = $${params.length}`;
+  } else {
+    params.push(actor.id);
+    whereClause = `WHERE EXISTS (
+      SELECT 1 FROM class_members mem WHERE mem.class_id = c.id AND mem.user_id = $${params.length}
+    )`;
   }
 
-  const { name } = req.body;
+  const classes = await query(
+    `SELECT
+       c.id,
+       c.name,
+       c.code,
+       c.description,
+       c.created_by,
+       u.display_name AS creator_name,
+       COUNT(DISTINCT mem.user_id)::int AS member_count,
+       COUNT(DISTINCT cm.module_id)::int AS module_count
+     FROM classes c
+     LEFT JOIN users u ON u.id = c.created_by
+     LEFT JOIN class_members mem ON mem.class_id = c.id
+     LEFT JOIN class_modules cm ON cm.class_id = c.id
+     ${whereClause}
+     GROUP BY c.id, u.display_name
+     ORDER BY c.created_at DESC`,
+    params
+  );
+
+  return res.json(
+    classes.rows.map((item) => ({
+      id: item.id,
+      name: item.name,
+      code: item.code,
+      description: item.description,
+      createdBy: item.created_by,
+      creatorName: item.creator_name,
+      memberCount: item.member_count,
+      moduleCount: item.module_count
+    }))
+  );
+});
+
+router.get("/classes/:classId", authMiddleware, async (req, res) => {
+  const actor = await getActor(req.userId);
+  if (!actor) return res.status(404).json({ message: "Usuário não encontrado." });
+
+  const access = await getClassWithAccess(actor, req.params.classId);
+  if (!access) return res.status(404).json({ message: "Turma não encontrada." });
+  if (access === false) return res.status(403).json({ message: "Você não tem acesso a esta turma." });
+
+  const members = await query(
+    `SELECT u.id, u.display_name, u.email, u.role, cm.joined_at
+     FROM class_members cm
+     JOIN users u ON u.id = cm.user_id
+     WHERE cm.class_id = $1
+     ORDER BY cm.joined_at ASC`,
+    [req.params.classId]
+  );
+
+  const modules = await query(
+    `SELECT m.id, m."order", m.title, m.description, m.icon
+     FROM class_modules cm
+     JOIN modules m ON m.id = cm.module_id
+     WHERE cm.class_id = $1
+     ORDER BY m."order" ASC`,
+    [req.params.classId]
+  );
+
+  return res.json({
+    ...access.turma,
+    canManage: access.canManage,
+    members: members.rows.map((member) => ({
+      id: member.id,
+      displayName: member.display_name,
+      email: member.email,
+      role: member.role,
+      joinedAt: member.joined_at
+    })),
+    modules: modules.rows.map((module) => ({
+      id: module.id,
+      order: module.order,
+      title: module.title,
+      description: module.description,
+      icon: module.icon
+    }))
+  });
+});
+
+router.post("/classes", authMiddleware, async (req, res) => {
+  const actor = await getActor(req.userId);
+  if (!actor || !isProfessor(actor.role)) {
+    return res.status(403).json({ message: "Somente professor pode criar turmas." });
+  }
+
+  const { name, description } = req.body;
   if (!name) return res.status(400).json({ message: "Informe o nome da turma." });
 
   const code = Math.random().toString(36).slice(2, 8).toUpperCase();
   const created = await query(
-    "INSERT INTO classes (name, code, created_by) VALUES ($1, $2, $3) RETURNING id, name, code",
-    [name, code, req.userId]
+    "INSERT INTO classes (name, code, description, created_by) VALUES ($1, $2, $3, $4) RETURNING id, name, code, description",
+    [name, code, description || "", req.userId]
   );
   return res.status(201).json(created.rows[0]);
 });
@@ -278,7 +417,7 @@ router.post("/classes", authMiddleware, async (req, res) => {
 router.post("/classes/join", authMiddleware, async (req, res) => {
   const { code } = req.body;
   if (!code) return res.status(400).json({ message: "Informe o código da turma." });
-  const classResult = await query("SELECT id, name, code FROM classes WHERE code = $1", [String(code).toUpperCase()]);
+  const classResult = await query("SELECT id, name, code, description FROM classes WHERE code = $1", [String(code).toUpperCase()]);
   if (!classResult.rowCount) return res.status(404).json({ message: "Turma não encontrada." });
 
   const turma = classResult.rows[0];
@@ -289,13 +428,104 @@ router.post("/classes/join", authMiddleware, async (req, res) => {
   return res.json({ message: "Entrada na turma realizada.", turma });
 });
 
+router.post("/classes/:classId/members", authMiddleware, async (req, res) => {
+  const actor = await getActor(req.userId);
+  if (!actor || !isProfessor(actor.role)) {
+    return res.status(403).json({ message: "Somente professor pode adicionar membros manualmente." });
+  }
+
+  const access = await getClassWithAccess(actor, req.params.classId);
+  if (!access) return res.status(404).json({ message: "Turma não encontrada." });
+  if (access === false || !access.canManage) {
+    return res.status(403).json({ message: "Você não pode gerenciar esta turma." });
+  }
+
+  const email = String(req.body.email || "").toLowerCase().trim();
+  if (!email) return res.status(400).json({ message: "Informe o e-mail do aluno." });
+
+  const student = await query("SELECT id FROM users WHERE email = $1", [email]);
+  if (!student.rowCount) return res.status(404).json({ message: "Usuário não encontrado." });
+
+  await query(
+    "INSERT INTO class_members (class_id, user_id) VALUES ($1, $2) ON CONFLICT (class_id, user_id) DO NOTHING",
+    [req.params.classId, student.rows[0].id]
+  );
+  return res.json({ message: "Membro adicionado à turma." });
+});
+
+router.delete("/classes/:classId/members/:userId", authMiddleware, async (req, res) => {
+  const actor = await getActor(req.userId);
+  if (!actor || !isProfessor(actor.role)) {
+    return res.status(403).json({ message: "Somente professor pode remover membros." });
+  }
+
+  const access = await getClassWithAccess(actor, req.params.classId);
+  if (!access) return res.status(404).json({ message: "Turma não encontrada." });
+  if (access === false || !access.canManage) {
+    return res.status(403).json({ message: "Você não pode gerenciar esta turma." });
+  }
+
+  await query("DELETE FROM class_members WHERE class_id = $1 AND user_id = $2", [req.params.classId, req.params.userId]);
+  return res.json({ message: "Membro removido da turma." });
+});
+
+router.post("/classes/:classId/modules/:moduleId", authMiddleware, async (req, res) => {
+  const actor = await getActor(req.userId);
+  if (!actor || !isProfessor(actor.role)) {
+    return res.status(403).json({ message: "Somente professor pode vincular conteúdo à turma." });
+  }
+
+  const access = await getClassWithAccess(actor, req.params.classId);
+  if (!access) return res.status(404).json({ message: "Turma não encontrada." });
+  if (access === false || !access.canManage) {
+    return res.status(403).json({ message: "Você não pode gerenciar esta turma." });
+  }
+
+  const module = await getManageableModule(actor, req.params.moduleId);
+  if (!module) return res.status(404).json({ message: "Módulo não encontrado." });
+  if (module === false) {
+    return res.status(403).json({ message: "Você só pode vincular módulos que criou." });
+  }
+
+  await query(
+    `INSERT INTO class_modules (class_id, module_id, assigned_by)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (class_id, module_id) DO NOTHING`,
+    [req.params.classId, req.params.moduleId, actor.id]
+  );
+  return res.json({ message: "Conteúdo vinculado à turma." });
+});
+
+router.delete("/classes/:classId/modules/:moduleId", authMiddleware, async (req, res) => {
+  const actor = await getActor(req.userId);
+  if (!actor || !isProfessor(actor.role)) {
+    return res.status(403).json({ message: "Somente professor pode desvincular conteúdo da turma." });
+  }
+
+  const access = await getClassWithAccess(actor, req.params.classId);
+  if (!access) return res.status(404).json({ message: "Turma não encontrada." });
+  if (access === false || !access.canManage) {
+    return res.status(403).json({ message: "Você não pode gerenciar esta turma." });
+  }
+
+  await query("DELETE FROM class_modules WHERE class_id = $1 AND module_id = $2", [req.params.classId, req.params.moduleId]);
+  return res.json({ message: "Conteúdo removido da turma." });
+});
+
 router.get("/classes/:classId/leaderboard", authMiddleware, async (req, res) => {
+  const actor = await getActor(req.userId);
+  if (!actor) return res.status(404).json({ message: "Usuário não encontrado." });
+
+  const access = await getClassWithAccess(actor, req.params.classId);
+  if (!access) return res.status(404).json({ message: "Turma não encontrada." });
+  if (access === false) return res.status(403).json({ message: "Você não tem acesso a esta turma." });
+
   const members = await query(
     `SELECT u.id, u.display_name, u.xp
      FROM class_members cm
      JOIN users u ON u.id = cm.user_id
      WHERE cm.class_id = $1
-     ORDER BY u.xp DESC`,
+     ORDER BY u.xp DESC, u.display_name ASC`,
     [req.params.classId]
   );
   return res.json(

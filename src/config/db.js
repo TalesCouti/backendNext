@@ -94,7 +94,8 @@ export async function initDatabase() {
       description TEXT NOT NULL,
       icon TEXT NOT NULL DEFAULT '📘',
       created_by UUID REFERENCES users(id) ON DELETE SET NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
 
@@ -104,9 +105,25 @@ export async function initDatabase() {
       module_id TEXT NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
       title TEXT NOT NULL,
       summary TEXT NOT NULL,
-      video_url TEXT NOT NULL,
+      video_url TEXT NOT NULL DEFAULT '',
       duration_min INTEGER NOT NULL DEFAULT 10,
       position INTEGER NOT NULL DEFAULT 1,
+      created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS activities (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      module_id TEXT NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      difficulty TEXT NOT NULL DEFAULT '🟢 Fácil',
+      question TEXT NOT NULL,
+      options TEXT[] NOT NULL,
+      correct_answer TEXT NOT NULL,
+      explanation TEXT NOT NULL,
+      created_by UUID REFERENCES users(id) ON DELETE SET NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
@@ -129,6 +146,7 @@ export async function initDatabase() {
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       name TEXT NOT NULL,
       code TEXT UNIQUE NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
       created_by UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
@@ -143,6 +161,35 @@ export async function initDatabase() {
       UNIQUE (class_id, user_id)
     );
   `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS class_modules (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      class_id UUID NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+      module_id TEXT NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
+      assigned_by UUID REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (class_id, module_id)
+    );
+  `);
+
+  await query(`ALTER TABLE modules ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
+  await query(`ALTER TABLE lessons ALTER COLUMN video_url SET DEFAULT '';`);
+  await query(`ALTER TABLE lessons ALTER COLUMN video_url DROP NOT NULL;`);
+  await query(`ALTER TABLE lessons ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id) ON DELETE SET NULL;`);
+  await query(`ALTER TABLE classes ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '';`);
+  await query(`CREATE TABLE IF NOT EXISTS activities (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    module_id TEXT NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    difficulty TEXT NOT NULL DEFAULT '🟢 Fácil',
+    question TEXT NOT NULL,
+    options TEXT[] NOT NULL,
+    correct_answer TEXT NOT NULL,
+    explanation TEXT NOT NULL,
+    created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );`);
 }
 
 export async function closeDatabase() {
