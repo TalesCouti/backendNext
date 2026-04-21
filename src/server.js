@@ -7,10 +7,20 @@ import contentRoutes from "./routes/content.js";
 import { initDatabase } from "./config/db.js";
 
 const app = express();
-const allowedOrigin = process.env.CORS_ORIGIN || "*";
+
+const corsOrigins = (process.env.CORS_ORIGIN || "*")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 app.use(
   cors({
-    origin: allowedOrigin
+    origin(origin, callback) {
+      if (!origin || corsOrigins.includes("*") || corsOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error("Origem não permitida pelo CORS"));
+    }
   })
 );
 app.use(express.json({ limit: "2mb" }));
