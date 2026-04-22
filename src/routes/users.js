@@ -4,6 +4,7 @@ import { authMiddleware } from "../middleware/auth.js";
 import { getLevelByXp } from "../config/levels.js";
 import { ACHIEVEMENTS } from "../config/achievements.js";
 import { query } from "../config/db.js";
+import { normalizeStoredText } from "../utils/text.js";
 
 const router = express.Router();
 
@@ -133,6 +134,8 @@ router.get("/me", authMiddleware, async (req, res) => {
 router.patch("/me", authMiddleware, async (req, res) => {
   const { displayName, profilePhotoUrl, email } = req.body;
   let safeEmail = null;
+  const safeDisplayName = displayName ? normalizeStoredText(displayName) : null;
+  const safeProfilePhotoUrl = profilePhotoUrl ? normalizeStoredText(profilePhotoUrl) : null;
   if (email) {
     safeEmail = String(email).toLowerCase().trim();
     const existing = await query("SELECT id FROM users WHERE email = $1 AND id <> $2", [safeEmail, req.userId]);
@@ -146,7 +149,7 @@ router.patch("/me", authMiddleware, async (req, res) => {
          updated_at = NOW()
      WHERE id = $4
      RETURNING id, display_name, profile_photo_url, email`,
-    [displayName ?? null, profilePhotoUrl ?? null, safeEmail, req.userId]
+    [safeDisplayName, safeProfilePhotoUrl, safeEmail, req.userId]
   );
   return res.json(updated.rows[0]);
 });
@@ -421,7 +424,8 @@ router.post("/classes", authMiddleware, async (req, res) => {
     return res.status(403).json({ message: "Somente professor pode criar turmas." });
   }
 
-  const { name, description } = req.body;
+  const name = normalizeStoredText(req.body.name);
+  const description = normalizeStoredText(req.body.description || "");
   if (!name) return res.status(400).json({ message: "Informe o nome da turma." });
 
   try {

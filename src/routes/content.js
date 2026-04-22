@@ -1,6 +1,7 @@
-import express from "express";
+﻿import express from "express";
 import { authMiddleware } from "../middleware/auth.js";
 import { query } from "../config/db.js";
+import { normalizeStoredStringArray, normalizeStoredText } from "../utils/text.js";
 
 const router = express.Router();
 
@@ -43,7 +44,7 @@ async function ensureManagedClasses(actor, classIds = []) {
   );
 
   if (result.rowCount !== ids.length) {
-    throw new Error("Uma ou mais turmas informadas não pertencem a este professor.");
+    throw new Error("Uma ou mais turmas informadas nÃ£o pertencem a este professor.");
   }
 
   return ids;
@@ -68,7 +69,7 @@ async function listModulesForUser(actor, scope = "visible") {
 
   if (scope === "manageable") {
     if (!isProfessor(actor.role)) {
-      throw new Error("Somente professores podem consultar conteúdo gerenciável.");
+      throw new Error("Somente professores podem consultar conteÃºdo gerenciÃ¡vel.");
     }
     params.push(actor.id);
     whereClause = `WHERE m.created_by = $${params.length}`;
@@ -160,7 +161,7 @@ async function loadActivities(moduleId) {
 
 router.get("/modules", authMiddleware, async (req, res) => {
   const actor = await getActor(req.userId);
-  if (!actor) return res.status(404).json({ message: "Usuário não encontrado." });
+  if (!actor) return res.status(404).json({ message: "UsuÃ¡rio nÃ£o encontrado." });
 
   try {
     const modules = await listModulesForUser(actor, req.query.scope === "manageable" ? "manageable" : "visible");
@@ -172,11 +173,11 @@ router.get("/modules", authMiddleware, async (req, res) => {
 
 router.get("/modules/:moduleId", authMiddleware, async (req, res) => {
   const actor = await getActor(req.userId);
-  if (!actor) return res.status(404).json({ message: "Usuário não encontrado." });
+  if (!actor) return res.status(404).json({ message: "UsuÃ¡rio nÃ£o encontrado." });
 
   const visibleModules = await listModulesForUser(actor, "visible");
   const module = visibleModules.find((item) => item.id === req.params.moduleId);
-  if (!module) return res.status(404).json({ message: "Módulo não encontrado." });
+  if (!module) return res.status(404).json({ message: "MÃ³dulo nÃ£o encontrado." });
 
   const [lessons, activities] = await Promise.all([
     loadLessons(req.params.moduleId),
@@ -210,12 +211,17 @@ router.get("/challenges", authMiddleware, async (_, res) => {
 router.post("/modules", authMiddleware, async (req, res) => {
   const actor = await getActor(req.userId);
   if (!actor || !isProfessor(actor.role)) {
-    return res.status(403).json({ message: "Somente professor pode cadastrar conteúdo." });
+    return res.status(403).json({ message: "Somente professor pode cadastrar conteÃºdo." });
   }
 
-  const { id, order, title, description, icon, classIds = [] } = req.body;
+  const id = normalizeStoredText(req.body.id);
+  const order = req.body.order;
+  const title = normalizeStoredText(req.body.title);
+  const description = normalizeStoredText(req.body.description);
+  const icon = normalizeStoredText(req.body.icon || "");
+  const classIds = Array.isArray(req.body.classIds) ? req.body.classIds : [];
   if (!id || !order || !title || !description) {
-    return res.status(400).json({ message: "Informe id, ordem, título e descrição." });
+    return res.status(400).json({ message: "Informe id, ordem, tÃ­tulo e descriÃ§Ã£o." });
   }
 
   try {
@@ -224,7 +230,7 @@ router.post("/modules", authMiddleware, async (req, res) => {
       `INSERT INTO modules (id, "order", title, description, icon, created_by, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, NOW())
        RETURNING id, "order", title, description, icon, created_by`,
-      [id, order, title, description, icon || "📘", actor.id]
+      [id, order, title, description, icon || "ðŸ“˜", actor.id]
     );
 
     for (const classId of validatedClassIds) {
@@ -241,21 +247,25 @@ router.post("/modules", authMiddleware, async (req, res) => {
       classes: validatedClassIds.map((classId) => ({ id: classId }))
     });
   } catch (error) {
-    return res.status(400).json({ message: error.message || "Falha ao criar módulo." });
+    return res.status(400).json({ message: error.message || "Falha ao criar mÃ³dulo." });
   }
 });
 
 router.patch("/modules/:moduleId", authMiddleware, async (req, res) => {
   const actor = await getActor(req.userId);
   if (!actor || !isProfessor(actor.role)) {
-    return res.status(403).json({ message: "Somente professor pode editar conteúdo." });
+    return res.status(403).json({ message: "Somente professor pode editar conteÃºdo." });
   }
 
   const module = await canManageModule(actor, req.params.moduleId);
-  if (!module) return res.status(404).json({ message: "Módulo não encontrado." });
-  if (module === false) return res.status(403).json({ message: "Você não pode editar este módulo." });
+  if (!module) return res.status(404).json({ message: "MÃ³dulo nÃ£o encontrado." });
+  if (module === false) return res.status(403).json({ message: "VocÃª nÃ£o pode editar este mÃ³dulo." });
 
-  const { order, title, description, icon, classIds } = req.body;
+  const order = req.body.order;
+  const title = req.body.title ? normalizeStoredText(req.body.title) : null;
+  const description = req.body.description ? normalizeStoredText(req.body.description) : null;
+  const icon = req.body.icon ? normalizeStoredText(req.body.icon) : null;
+  const classIds = req.body.classIds;
 
   try {
     await query(
@@ -285,22 +295,22 @@ router.patch("/modules/:moduleId", authMiddleware, async (req, res) => {
     const updated = await getModuleById(req.params.moduleId);
     return res.json(updated);
   } catch (error) {
-    return res.status(400).json({ message: error.message || "Falha ao atualizar módulo." });
+    return res.status(400).json({ message: error.message || "Falha ao atualizar mÃ³dulo." });
   }
 });
 
 router.delete("/modules/:moduleId", authMiddleware, async (req, res) => {
   const actor = await getActor(req.userId);
   if (!actor || !isProfessor(actor.role)) {
-    return res.status(403).json({ message: "Somente professor pode remover conteúdo." });
+    return res.status(403).json({ message: "Somente professor pode remover conteÃºdo." });
   }
 
   const module = await canManageModule(actor, req.params.moduleId);
-  if (!module) return res.status(404).json({ message: "Módulo não encontrado." });
-  if (module === false) return res.status(403).json({ message: "Você não pode remover este módulo." });
+  if (!module) return res.status(404).json({ message: "MÃ³dulo nÃ£o encontrado." });
+  if (module === false) return res.status(403).json({ message: "VocÃª nÃ£o pode remover este mÃ³dulo." });
 
   await query("DELETE FROM modules WHERE id = $1", [req.params.moduleId]);
-  return res.json({ message: "Módulo removido com sucesso." });
+  return res.json({ message: "MÃ³dulo removido com sucesso." });
 });
 
 router.post("/modules/:moduleId/lessons", authMiddleware, async (req, res) => {
@@ -310,12 +320,16 @@ router.post("/modules/:moduleId/lessons", authMiddleware, async (req, res) => {
   }
 
   const module = await canManageModule(actor, req.params.moduleId);
-  if (!module) return res.status(404).json({ message: "Módulo não encontrado." });
-  if (module === false) return res.status(403).json({ message: "Você não pode editar este módulo." });
+  if (!module) return res.status(404).json({ message: "MÃ³dulo nÃ£o encontrado." });
+  if (module === false) return res.status(403).json({ message: "VocÃª nÃ£o pode editar este mÃ³dulo." });
 
-  const { title, summary, durationMin, videoUrl, position } = req.body;
+  const title = normalizeStoredText(req.body.title);
+  const summary = normalizeStoredText(req.body.summary);
+  const durationMin = req.body.durationMin;
+  const videoUrl = normalizeStoredText(req.body.videoUrl || "");
+  const position = req.body.position;
   if (!title || !summary) {
-    return res.status(400).json({ message: "Informe título e resumo da aula." });
+    return res.status(400).json({ message: "Informe tÃ­tulo e resumo da aula." });
   }
 
   const created = await query(
@@ -334,35 +348,40 @@ router.delete("/modules/:moduleId/lessons/:lessonId", authMiddleware, async (req
   }
 
   const module = await canManageModule(actor, req.params.moduleId);
-  if (!module) return res.status(404).json({ message: "Módulo não encontrado." });
-  if (module === false) return res.status(403).json({ message: "Você não pode editar este módulo." });
+  if (!module) return res.status(404).json({ message: "MÃ³dulo nÃ£o encontrado." });
+  if (module === false) return res.status(403).json({ message: "VocÃª nÃ£o pode editar este mÃ³dulo." });
 
   const removed = await query("DELETE FROM lessons WHERE id = $1 AND module_id = $2 RETURNING id", [
     req.params.lessonId,
     req.params.moduleId
   ]);
-  if (!removed.rowCount) return res.status(404).json({ message: "Aula não encontrada." });
+  if (!removed.rowCount) return res.status(404).json({ message: "Aula nÃ£o encontrada." });
   return res.json({ message: "Aula removida com sucesso." });
 });
 
 router.post("/modules/:moduleId/activities", authMiddleware, async (req, res) => {
   const actor = await getActor(req.userId);
   if (!actor || !isProfessor(actor.role)) {
-    return res.status(403).json({ message: "Somente professor pode criar questões." });
+    return res.status(403).json({ message: "Somente professor pode criar questÃµes." });
   }
 
   const module = await canManageModule(actor, req.params.moduleId);
-  if (!module) return res.status(404).json({ message: "Módulo não encontrado." });
-  if (module === false) return res.status(403).json({ message: "Você não pode editar este módulo." });
+  if (!module) return res.status(404).json({ message: "MÃ³dulo nÃ£o encontrado." });
+  if (module === false) return res.status(403).json({ message: "VocÃª nÃ£o pode editar este mÃ³dulo." });
 
-  const { title, difficulty, question, options, expectedAnswer, explanation } = req.body;
+  const title = normalizeStoredText(req.body.title);
+  const difficulty = normalizeStoredText(req.body.difficulty || "Fácil");
+  const question = normalizeStoredText(req.body.question);
+  const options = req.body.options;
+  const expectedAnswer = normalizeStoredText(req.body.expectedAnswer);
+  const explanation = normalizeStoredText(req.body.explanation);
   if (!title || !question || !Array.isArray(options) || options.length < 2 || !expectedAnswer || !explanation) {
-    return res.status(400).json({ message: "Informe título, pergunta, opções, resposta correta e explicação." });
+    return res.status(400).json({ message: "Informe tÃ­tulo, pergunta, opÃ§Ãµes, resposta correta e explicaÃ§Ã£o." });
   }
 
-  const sanitizedOptions = options.map((item) => String(item).trim()).filter(Boolean);
-  if (!sanitizedOptions.includes(String(expectedAnswer).trim())) {
-    return res.status(400).json({ message: "A resposta correta precisa estar entre as opções." });
+  const sanitizedOptions = normalizeStoredStringArray(options);
+  if (!sanitizedOptions.includes(expectedAnswer)) {
+    return res.status(400).json({ message: "A resposta correta precisa estar entre as opÃ§Ãµes." });
   }
 
   const created = await query(
@@ -372,10 +391,10 @@ router.post("/modules/:moduleId/activities", authMiddleware, async (req, res) =>
     [
       req.params.moduleId,
       title,
-      difficulty || "🟢 Fácil",
+      difficulty || "Fácil",
       question,
       sanitizedOptions,
-      String(expectedAnswer).trim(),
+      expectedAnswer,
       explanation,
       actor.id
     ]
@@ -396,19 +415,19 @@ router.post("/modules/:moduleId/activities", authMiddleware, async (req, res) =>
 router.delete("/modules/:moduleId/activities/:activityId", authMiddleware, async (req, res) => {
   const actor = await getActor(req.userId);
   if (!actor || !isProfessor(actor.role)) {
-    return res.status(403).json({ message: "Somente professor pode remover questões." });
+    return res.status(403).json({ message: "Somente professor pode remover questÃµes." });
   }
 
   const module = await canManageModule(actor, req.params.moduleId);
-  if (!module) return res.status(404).json({ message: "Módulo não encontrado." });
-  if (module === false) return res.status(403).json({ message: "Você não pode editar este módulo." });
+  if (!module) return res.status(404).json({ message: "MÃ³dulo nÃ£o encontrado." });
+  if (module === false) return res.status(403).json({ message: "VocÃª nÃ£o pode editar este mÃ³dulo." });
 
   const removed = await query(
     "DELETE FROM activities WHERE id = $1 AND module_id = $2 RETURNING id",
     [req.params.activityId, req.params.moduleId]
   );
-  if (!removed.rowCount) return res.status(404).json({ message: "Questão não encontrada." });
-  return res.json({ message: "Questão removida com sucesso." });
+  if (!removed.rowCount) return res.status(404).json({ message: "QuestÃ£o nÃ£o encontrada." });
+  return res.json({ message: "QuestÃ£o removida com sucesso." });
 });
 
 router.post("/challenges", authMiddleware, async (req, res) => {
@@ -417,9 +436,12 @@ router.post("/challenges", authMiddleware, async (req, res) => {
     return res.status(403).json({ message: "Somente professor pode cadastrar desafios." });
   }
 
-  const { title, type, description, xpReward } = req.body;
+  const title = normalizeStoredText(req.body.title);
+  const type = normalizeStoredText(req.body.type);
+  const description = normalizeStoredText(req.body.description);
+  const xpReward = req.body.xpReward;
   if (!title || !type || !description) {
-    return res.status(400).json({ message: "Informe título, tipo e descrição do desafio." });
+    return res.status(400).json({ message: "Informe tÃ­tulo, tipo e descriÃ§Ã£o do desafio." });
   }
   const created = await query(
     `INSERT INTO challenges (title, type, description, xp_reward, created_by)
@@ -434,3 +456,4 @@ router.post("/challenges", authMiddleware, async (req, res) => {
 });
 
 export default router;
+
