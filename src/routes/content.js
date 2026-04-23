@@ -230,7 +230,7 @@ router.post("/modules", authMiddleware, async (req, res) => {
       `INSERT INTO modules (id, "order", title, description, icon, created_by, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, NOW())
        RETURNING id, "order", title, description, icon, created_by`,
-      [id, order, title, description, icon || "ðŸ“˜", actor.id]
+      [id, order, title, description, icon || "“˜", actor.id]
     );
 
     for (const classId of validatedClassIds) {

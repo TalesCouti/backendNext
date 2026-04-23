@@ -190,6 +190,20 @@ export async function initDatabase() {
     created_by UUID REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );`);
+  await query(`DELETE FROM activities
+    WHERE module_id IN ('m1', 'm2')
+      AND created_by IS NULL;`);
+  await query(`DELETE FROM lessons
+    WHERE module_id IN ('m1', 'm2')
+      AND created_by IS NULL;`);
+  await query(`DELETE FROM class_modules
+    WHERE module_id IN ('m1', 'm2');`);
+  await query(`DELETE FROM modules
+    WHERE id IN ('m1', 'm2')
+      AND created_by IS NULL;`);
+  await query(`DELETE FROM challenges
+    WHERE created_by IS NULL
+      AND type IN ('weekly', 'hard');`);
 }
 
 export async function closeDatabase() {
