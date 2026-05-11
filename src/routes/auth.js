@@ -13,22 +13,22 @@ function normalizeRequestedRole(role) {
 
 async function createUser({ fullName, birthDate, email, password, confirmPassword, role }) {
   if (!fullName || !birthDate || !email || !password || !confirmPassword) {
-    return { status: 400, body: { message: "Preencha todos os campos obrigatÃ³rios." } };
+    return { status: 400, body: { message: "Preencha todos os campos obrigatórios." } };
   }
 
   if (password !== confirmPassword) {
-    return { status: 400, body: { message: "As senhas nÃ£o coincidem." } };
+    return { status: 400, body: { message: "As senhas não coincidem." } };
   }
 
   if (!strongPassword.test(password)) {
-    return { status: 400, body: { message: "Senha fraca. Use 8+ caracteres com maiÃºscula, minÃºscula, nÃºmero e sÃ­mbolo." } };
+    return { status: 400, body: { message: "Senha fraca. Use 8+ caracteres com maiúscula, minúscula, número e símbolo." } };
   }
 
   const sanitizedEmail = String(email).toLowerCase().trim();
   const normalizedFullName = normalizeStoredText(fullName);
   const existing = await query("SELECT id FROM users WHERE email = $1", [sanitizedEmail]);
   if (existing.rowCount) {
-    return { status: 409, body: { message: "E-mail jÃ¡ cadastrado." } };
+    return { status: 409, body: { message: "E-mail já cadastrado." } };
   }
 
   const passwordHash = await bcrypt.hash(password, 10);
@@ -45,7 +45,7 @@ async function createUser({ fullName, birthDate, email, password, confirmPasswor
     body: {
       id: created.rows[0].id,
       role: created.rows[0].role,
-      message: "Cadastro concluÃ­do."
+      message: "Cadastro concluído."
     }
   };
 }
@@ -59,11 +59,11 @@ router.post("/register", async (req, res) => {
 router.post("/login", async (req, res) => {
   const { email, password } = req.body;
   const userResult = await query("SELECT id, password_hash, role FROM users WHERE email = $1", [email?.toLowerCase()]);
-  if (!userResult.rowCount) return res.status(401).json({ message: "Credenciais invÃ¡lidas." });
+  if (!userResult.rowCount) return res.status(401).json({ message: "Credenciais inválidas." });
   const user = userResult.rows[0];
 
   const ok = await bcrypt.compare(password, user.password_hash);
-  if (!ok) return res.status(401).json({ message: "Credenciais invÃ¡lidas." });
+  if (!ok) return res.status(401).json({ message: "Credenciais inválidas." });
 
   const token = jwt.sign({ sub: user.id, role: user.role }, process.env.JWT_SECRET, { expiresIn: "7d" });
   return res.json({ token });
@@ -74,7 +74,7 @@ router.post("/forgot-password", async (req, res) => {
   if (!email) return res.status(400).json({ message: "Informe o e-mail." });
 
   const user = await query("SELECT id FROM users WHERE email = $1", [email.toLowerCase()]);
-  if (!user.rowCount) return res.json({ message: "Se o e-mail existir, um cÃ³digo de recuperaÃ§Ã£o foi enviado." });
+  if (!user.rowCount) return res.json({ message: "Se o e-mail existir, um código de recuperação foi enviado." });
 
   const code = String(Math.floor(100000 + Math.random() * 900000));
   await query(
@@ -83,7 +83,7 @@ router.post("/forgot-password", async (req, res) => {
   );
 
   return res.json({
-    message: "CÃ³digo de recuperaÃ§Ã£o gerado.",
+    message: "Código de recuperação gerado.",
     devCode: code
   });
 });
@@ -94,10 +94,10 @@ router.post("/reset-password", async (req, res) => {
     return res.status(400).json({ message: "Preencha todos os campos." });
   }
   if (newPassword !== confirmPassword) {
-    return res.status(400).json({ message: "As senhas nÃ£o coincidem." });
+    return res.status(400).json({ message: "As senhas não coincidem." });
   }
   if (!strongPassword.test(newPassword)) {
-    return res.status(400).json({ message: "Senha fraca. Use 8+ caracteres com maiÃºscula, minÃºscula, nÃºmero e sÃ­mbolo." });
+    return res.status(400).json({ message: "Senha fraca. Use 8+ caracteres com maiúscula, minúscula, número e símbolo." });
   }
 
   const user = await query(
@@ -105,14 +105,14 @@ router.post("/reset-password", async (req, res) => {
     [email.toLowerCase()]
   );
   if (!user.rowCount) {
-    return res.status(400).json({ message: "CÃ³digo invÃ¡lido ou expirado." });
+    return res.status(400).json({ message: "Código inválido ou expirado." });
   }
   const row = user.rows[0];
   if (!row.password_reset_code || !row.password_reset_expires_at) {
-    return res.status(400).json({ message: "CÃ³digo invÃ¡lido ou expirado." });
+    return res.status(400).json({ message: "Código inválido ou expirado." });
   }
   if (new Date(row.password_reset_expires_at).getTime() < Date.now() || row.password_reset_code !== code) {
-    return res.status(400).json({ message: "CÃ³digo invÃ¡lido ou expirado." });
+    return res.status(400).json({ message: "Código inválido ou expirado." });
   }
 
   await query(
