@@ -118,10 +118,14 @@ export async function initDatabase() {
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       module_id TEXT NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
       title TEXT NOT NULL,
+      activity_type TEXT NOT NULL DEFAULT 'multipla_escolha',
       difficulty TEXT NOT NULL DEFAULT '🟢 Fácil',
       question TEXT NOT NULL,
-      options TEXT[] NOT NULL,
+      options TEXT[] NOT NULL DEFAULT '{}',
       correct_answer TEXT NOT NULL,
+      starter_code TEXT NOT NULL DEFAULT '',
+      visible_tests TEXT[] NOT NULL DEFAULT '{}',
+      hidden_tests TEXT[] NOT NULL DEFAULT '{}',
       explanation TEXT NOT NULL,
       created_by UUID REFERENCES users(id) ON DELETE SET NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -178,14 +182,23 @@ export async function initDatabase() {
   await query(`ALTER TABLE lessons ALTER COLUMN video_url DROP NOT NULL;`);
   await query(`ALTER TABLE lessons ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id) ON DELETE SET NULL;`);
   await query(`ALTER TABLE classes ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '';`);
+  await query(`ALTER TABLE activities ADD COLUMN IF NOT EXISTS activity_type TEXT NOT NULL DEFAULT 'multipla_escolha';`);
+  await query(`ALTER TABLE activities ALTER COLUMN options SET DEFAULT '{}';`);
+  await query(`ALTER TABLE activities ADD COLUMN IF NOT EXISTS starter_code TEXT NOT NULL DEFAULT '';`);
+  await query(`ALTER TABLE activities ADD COLUMN IF NOT EXISTS visible_tests TEXT[] NOT NULL DEFAULT '{}';`);
+  await query(`ALTER TABLE activities ADD COLUMN IF NOT EXISTS hidden_tests TEXT[] NOT NULL DEFAULT '{}';`);
   await query(`CREATE TABLE IF NOT EXISTS activities (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     module_id TEXT NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
+    activity_type TEXT NOT NULL DEFAULT 'multipla_escolha',
     difficulty TEXT NOT NULL DEFAULT '🟢 Fácil',
     question TEXT NOT NULL,
-    options TEXT[] NOT NULL,
+    options TEXT[] NOT NULL DEFAULT '{}',
     correct_answer TEXT NOT NULL,
+    starter_code TEXT NOT NULL DEFAULT '',
+    visible_tests TEXT[] NOT NULL DEFAULT '{}',
+    hidden_tests TEXT[] NOT NULL DEFAULT '{}',
     explanation TEXT NOT NULL,
     created_by UUID REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

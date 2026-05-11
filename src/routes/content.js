@@ -141,7 +141,7 @@ async function loadLessons(moduleId) {
 
 async function loadActivities(moduleId) {
   const activityRows = await query(
-    `SELECT id, title, difficulty, question, options, correct_answer, explanation
+    `SELECT id, title, activity_type, difficulty, question, options, correct_answer, starter_code, visible_tests, hidden_tests, explanation
      FROM activities
      WHERE module_id = $1
      ORDER BY created_at ASC`,
@@ -150,11 +150,14 @@ async function loadActivities(moduleId) {
   return activityRows.rows.map((activity) => ({
     id: activity.id,
     title: activity.title,
-    type: "multipla_escolha",
+    type: activity.activity_type,
     difficulty: activity.difficulty,
     question: activity.question,
     options: activity.options,
     expectedAnswer: activity.correct_answer,
+    starterCode: activity.starter_code,
+    visibleTests: activity.visible_tests,
+    hiddenTests: activity.hidden_tests,
     explanation: activity.explanation
   }));
 }
@@ -370,31 +373,48 @@ router.post("/modules/:moduleId/activities", authMiddleware, async (req, res) =>
   if (module === false) return res.status(403).json({ message: "VocÃª nÃ£o pode editar este mÃ³dulo." });
 
   const title = normalizeStoredText(req.body.title);
+  const activityType = normalizeStoredText(req.body.activityType || req.body.type || "multipla_escolha");
   const difficulty = normalizeStoredText(req.body.difficulty || "Fácil");
   const question = normalizeStoredText(req.body.question);
   const options = req.body.options;
   const expectedAnswer = normalizeStoredText(req.body.expectedAnswer);
+  const starterCode = normalizeStoredText(req.body.starterCode || "");
+  const visibleTests = normalizeStoredStringArray(req.body.visibleTests || []);
+  const hiddenTests = normalizeStoredStringArray(req.body.hiddenTests || []);
   const explanation = normalizeStoredText(req.body.explanation);
-  if (!title || !question || !Array.isArray(options) || options.length < 2 || !expectedAnswer || !explanation) {
-    return res.status(400).json({ message: "Informe tÃ­tulo, pergunta, opÃ§Ãµes, resposta correta e explicaÃ§Ã£o." });
+
+  if (!["multipla_escolha", "coding_challenge"].includes(activityType)) {
+    return res.status(400).json({ message: "Tipo de questão inválido." });
   }
 
-  const sanitizedOptions = normalizeStoredStringArray(options);
-  if (!sanitizedOptions.includes(expectedAnswer)) {
+  if (!title || !question || !expectedAnswer || !explanation) {
+    return res.status(400).json({ message: "Informe título, pergunta, resposta esperada e explicação." });
+  }
+
+  const sanitizedOptions = activityType === "multipla_escolha" ? normalizeStoredStringArray(options || []) : [];
+  if (activityType === "multipla_escolha" && sanitizedOptions.length < 2) {
+    return res.status(400).json({ message: "Informe pelo menos duas opções para múltipla escolha." });
+  }
+
+  if (activityType === "multipla_escolha" && !sanitizedOptions.includes(expectedAnswer)) {
     return res.status(400).json({ message: "A resposta correta precisa estar entre as opÃ§Ãµes." });
   }
 
   const created = await query(
-    `INSERT INTO activities (module_id, title, difficulty, question, options, correct_answer, explanation, created_by)
-     VALUES ($1, $2, $3, $4, $5::text[], $6, $7, $8)
-     RETURNING id, title, difficulty, question, options, correct_answer, explanation`,
+    `INSERT INTO activities (module_id, title, activity_type, difficulty, question, options, correct_answer, starter_code, visible_tests, hidden_tests, explanation, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6::text[], $7, $8, $9::text[], $10::text[], $11, $12)
+     RETURNING id, title, activity_type, difficulty, question, options, correct_answer, starter_code, visible_tests, hidden_tests, explanation`,
     [
       req.params.moduleId,
       title,
+      activityType,
       difficulty || "Fácil",
       question,
       sanitizedOptions,
       expectedAnswer,
+      starterCode,
+      visibleTests,
+      hiddenTests,
       explanation,
       actor.id
     ]
@@ -403,11 +423,14 @@ router.post("/modules/:moduleId/activities", authMiddleware, async (req, res) =>
   return res.status(201).json({
     id: created.rows[0].id,
     title: created.rows[0].title,
-    type: "multipla_escolha",
+    type: created.rows[0].activity_type,
     difficulty: created.rows[0].difficulty,
     question: created.rows[0].question,
     options: created.rows[0].options,
     expectedAnswer: created.rows[0].correct_answer,
+    starterCode: created.rows[0].starter_code,
+    visibleTests: created.rows[0].visible_tests,
+    hiddenTests: created.rows[0].hidden_tests,
     explanation: created.rows[0].explanation
   });
 });
@@ -456,4 +479,3 @@ router.post("/challenges", authMiddleware, async (req, res) => {
 });
 
 export default router;
-
