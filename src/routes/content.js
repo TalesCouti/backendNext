@@ -1,6 +1,7 @@
 ﻿import express from "express";
 import { authMiddleware } from "../middleware/auth.js";
 import { query } from "../config/db.js";
+import { buildExecutionTests, evaluateCSubmission } from "../utils/codeRunner.js";
 import { normalizeStoredStringArray, normalizeStoredText } from "../utils/text.js";
 
 const router = express.Router();
@@ -433,6 +434,70 @@ router.post("/modules/:moduleId/activities", authMiddleware, async (req, res) =>
     hiddenTests: created.rows[0].hidden_tests,
     explanation: created.rows[0].explanation
   });
+});
+
+router.post("/activities/:activityId/submit", authMiddleware, async (req, res) => {
+  const activityResult = await query(
+    `SELECT id, activity_type, correct_answer, visible_tests, hidden_tests, explanation
+     FROM activities
+     WHERE id = $1`,
+    [req.params.activityId]
+  );
+
+  if (!activityResult.rowCount) {
+    return res.status(404).json({ message: "Questão não encontrada." });
+  }
+
+  const activity = activityResult.rows[0];
+
+  if (activity.activity_type === "multipla_escolha") {
+    const answer = normalizeStoredText(req.body.answer);
+    const expected = normalizeStoredText(activity.correct_answer);
+    const isCorrect = answer.toLowerCase() === expected.toLowerCase();
+
+    return res.json({
+      isCorrect,
+      explanation: activity.explanation,
+      expectedAnswer: isCorrect ? undefined : activity.correct_answer
+    });
+  }
+
+  if (activity.activity_type !== "coding_challenge") {
+    return res.status(400).json({ message: "Tipo de questão inválido." });
+  }
+
+  try {
+    const evaluation = await evaluateCSubmission({
+      code: String(req.body.code || ""),
+      tests: buildExecutionTests(activity)
+    });
+
+    if (!evaluation.ok) {
+      return res.status(evaluation.status || 400).json({ message: evaluation.message });
+    }
+
+    return res.json({
+      isCorrect: evaluation.isCorrect,
+      explanation: activity.explanation,
+      tests: evaluation.results.map((result) => {
+        if (!result.hidden) return result;
+        return {
+          index: result.index,
+          hidden: true,
+          passed: result.passed,
+          stderr: result.stderr,
+          timedOut: result.timedOut,
+          exitCode: result.exitCode
+        };
+      })
+    });
+  } catch (error) {
+    return res.status(503).json({
+      message:
+        "Não foi possível executar o código. Verifique se o runner está configurado com Docker ou CODE_RUNNER_MODE=local.",
+      detail: process.env.NODE_ENV === "production" ? undefined : error.message
+    });
+  }
 });
 
 router.delete("/modules/:moduleId/activities/:activityId", authMiddleware, async (req, res) => {
