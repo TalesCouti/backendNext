@@ -59,6 +59,17 @@ const modules = [
         hiddenTests: [],
         correctAnswer: "Ola, C!",
         explanation: "A biblioteca stdio.h fornece printf, que escreve texto na saida padrao."
+      },
+      {
+        title: "Seu primeiro programa em C",
+        activityType: "coding_challenge",
+        difficulty: "Facil",
+        question: "Escreva um programa que exiba seu nome na tela. Use printf para isso.",
+        starterCode: "#include <stdio.h>\n\nint main(void) {\n    // escreva seu nome aqui\n    return 0;\n}\n",
+        visibleTests: ["=> Seu nome aqui"],
+        hiddenTests: [],
+        correctAnswer: "Seu nome aqui",
+        explanation: "Use printf(\"seu texto\") para exibir mensagens. Por exemplo: printf(\"Olá\")."
       }
     ]
   },
@@ -104,6 +115,28 @@ const modules = [
         hiddenTests: [],
         correctAnswer: "18",
         explanation: "Em C, declaramos o tipo antes do nome da variavel e usamos printf para imprimir."
+      },
+      {
+        title: "Multiplicando dois inteiros",
+        activityType: "coding_challenge",
+        difficulty: "Medio",
+        question: "Declare duas variaveis inteiras a = 5 e b = 3, calcule o produto delas e imprima o resultado.",
+        starterCode: "#include <stdio.h>\n\nint main(void) {\n    int a = 5, b = 3;\n    // calcule e imprima o produto aqui\n    return 0;\n}\n",
+        visibleTests: ["=> 15"],
+        hiddenTests: [],
+        correctAnswer: "15",
+        explanation: "Use o operador * para multiplicar. printf(\"%d\", a * b) imprime o resultado."
+      },
+      {
+        title: "Temperatura em Celsius e Fahrenheit",
+        activityType: "coding_challenge",
+        difficulty: "Medio",
+        question: "Declare uma variavel celsius com valor 25. Calcule a temperatura em Fahrenheit usando a formula F = C * 9/5 + 32 e imprima o resultado sem casas decimais.",
+        starterCode: "#include <stdio.h>\n\nint main(void) {\n    int celsius = 25;\n    // calcule fahrenheit e imprima aqui\n    return 0;\n}\n",
+        visibleTests: ["=> 77"],
+        hiddenTests: [],
+        correctAnswer: "77",
+        explanation: "Celsius 25 * 9/5 + 32 = 77. Use printf(\"%d\", ...) para imprimir sem decimais."
       }
     ]
   },
@@ -149,6 +182,28 @@ const modules = [
         hiddenTests: ["10 5 => 15"],
         correctAnswer: "5",
         explanation: "Depois de ler a e b com scanf, a expressao a + b calcula a soma."
+      },
+      {
+        title: "Produto e resto de dois numeros",
+        activityType: "coding_challenge",
+        difficulty: "Dificil",
+        question: "Leia dois numeros, calcule o produto deles e o resto da divisao do primeiro pelo segundo. Imprima ambos em uma linha separados por espaco.",
+        starterCode: "#include <stdio.h>\n\nint main(void) {\n    int a, b;\n    scanf(\"%d %d\", &a, &b);\n    // calcule produto e resto, depois imprima\n    return 0;\n}\n",
+        visibleTests: ["7 3 => 21 1"],
+        hiddenTests: ["10 4 => 40 2"],
+        correctAnswer: "21 1",
+        explanation: "Use * para multiplicacao e % para resto. printf(\"%d %d\", a*b, a%b) imprime ambos."
+      },
+      {
+        title: "Verificar numero par",
+        activityType: "coding_challenge",
+        difficulty: "Dificil",
+        question: "Leia um numero e imprima 1 se for par, 0 se for impar (dica: use o operador %).",
+        starterCode: "#include <stdio.h>\n\nint main(void) {\n    int numero;\n    scanf(\"%d\", &numero);\n    // verifique se eh par e imprima 1 ou 0\n    return 0;\n}\n",
+        visibleTests: ["4 => 1", "7 => 0"],
+        hiddenTests: ["100 => 1", "33 => 0"],
+        correctAnswer: "1",
+        explanation: "Um numero eh par se o resto da divisao por 2 eh 0. Use numero % 2 == 0."
       }
     ]
   }
