@@ -75,6 +75,7 @@ function runProcess(command, args, { input = "", timeoutMs = RUN_TIMEOUT_MS, cwd
     let stdout = "";
     let stderr = "";
     let timedOut = false;
+    let resolved = false;
 
     const timer = setTimeout(() => {
       timedOut = true;
@@ -91,15 +92,42 @@ function runProcess(command, args, { input = "", timeoutMs = RUN_TIMEOUT_MS, cwd
 
     child.on("error", (error) => {
       clearTimeout(timer);
-      resolve({ exitCode: -1, stdout, stderr: error.message, timedOut });
+      if (!resolved) {
+        resolved = true;
+        resolve({ exitCode: -1, stdout, stderr: error.message, timedOut });
+      }
     });
 
     child.on("close", (exitCode) => {
       clearTimeout(timer);
-      resolve({ exitCode, stdout, stderr, timedOut });
+      if (!resolved) {
+        resolved = true;
+        resolve({ exitCode, stdout, stderr, timedOut });
+      }
     });
 
-    child.stdin.end(input);
+    // Handle stdin errors
+    child.stdin.on("error", (error) => {
+      // Ignore EPIPE errors, just close the stream
+      if (error.code !== "EPIPE") {
+        clearTimeout(timer);
+        if (!resolved) {
+          resolved = true;
+          resolve({ exitCode: -1, stdout, stderr: error.message, timedOut });
+        }
+      }
+    });
+
+    try {
+      child.stdin.end(input);
+    } catch (error) {
+      // Ignore errors writing to stdin
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timer);
+        resolve({ exitCode: -1, stdout, stderr: error.message, timedOut });
+      }
+    }
   });
 }
 
@@ -116,9 +144,9 @@ async function runCInDocker(code, stdin) {
         "--network",
         "none",
         "--memory",
-        "128m",
+        "256m",
         "--cpus",
-        "0.5",
+        "1",
         "-v",
         `${workdir}:/workspace:rw`,
         "-w",
@@ -126,9 +154,9 @@ async function runCInDocker(code, stdin) {
         DOCKER_IMAGE,
         "sh",
         "-c",
-        "gcc main.c -O2 -std=c11 -Wall -Wextra -o main && timeout 3s ./main"
+        "gcc main.c -O2 -std=c11 -Wall -Wextra -o main 2>&1 && timeout 3s ./main 2>&1"
       ],
-      { input: stdin }
+      { input: stdin, timeoutMs: RUN_TIMEOUT_MS }
     );
   } finally {
     await rm(workdir, { recursive: true, force: true });
